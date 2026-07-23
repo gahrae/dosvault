@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dos Vault</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>C:\DOSVAULT&gt; <span class="cursor">_</span></h1>
+  <nav>
+    <button data-tab="browse" class="tab active">Browse</button>
+    <button data-tab="shortlist" class="tab">Shortlist <span id="shortlistCount"></span></button>
+    <button id="surpriseBtn" title="Random game matching current filters">🎲 Surprise me</button>
+  </nav>
+  <div id="scrapeProgress" class="progress" hidden></div>
+  <button id="settingsBtn" title="Settings">⚙</button>
+</header>
+
+<div class="layout">
+  <aside id="filters">
+    <input type="search" id="search" placeholder="Search title / description...">
+    <label title="Ctrl-click to select several; empty selection means all">Genre
+      <select id="fGenre" multiple size="4"></select></label>
+    <label title="Ctrl-click to select several; empty selection means all">Theme
+      <select id="fTheme" multiple size="4"></select></label>
+    <label title="Ctrl-click to select several; empty selection means all">Perspective
+      <select id="fPerspective" multiple size="4"></select></label>
+    <label>Released in <select id="fReleasedIn"><option value="">All</option></select></label>
+    <label>Source <select id="fSource"><option value="">All</option></select></label>
+    <div class="row">
+      <label>Year from <input type="number" id="fYearMin" min="1970" max="2010" placeholder="1980"></label>
+      <label>to <input type="number" id="fYearMax" min="1970" max="2010" placeholder="1999"></label>
+    </div>
+    <div class="era-chips">
+      <button data-era="1980,1984">Early 80s</button>
+      <button data-era="1985,1989">Late 80s</button>
+      <button data-era="1990,1994">Early 90s</button>
+      <button data-era="1995,2005">Mid 90s+</button>
+    </div>
+    <label>Min community rating
+      <select id="fMinRating">
+        <option value="">Any</option><option value="3">3+</option>
+        <option value="3.5">3.5+</option><option value="4">4+</option><option value="4.5">4.5+</option>
+      </select>
+    </label>
+    <label>Min votes
+      <select id="fMinVotes">
+        <option value="">Any</option><option value="5">5+</option>
+        <option value="20">20+</option><option value="50">50+</option>
+      </select>
+    </label>
+    <label>My status
+      <select id="fStatus">
+        <option value="">Any (hides Not interested)</option>
+        <option value="none">Untriaged</option>
+        <option value="played">Played</option>
+        <option value="finished">Finished</option>
+        <option value="abandoned">Abandoned</option>
+        <option value="not_interested">Not interested</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" id="fRated"> Rated by me</label>
+    <label class="check"><input type="checkbox" id="fHasNotes"> Has my notes</label>
+    <label class="check"><input type="checkbox" id="fInstalled"> Installed</label>
+    <label>Sort by
+      <select id="fSort">
+        <option value="title">Title</option>
+        <option value="year">Year ↑</option>
+        <option value="year_desc">Year ↓</option>
+        <option value="rating">Community rating</option>
+        <option value="votes">Most votes</option>
+        <option value="my_rating">My rating</option>
+      </select>
+    </label>
+    <button id="clearFilters">Clear filters</button>
+  </aside>
+
+  <main>
+    <div id="resultInfo"></div>
+    <div id="grid" class="grid"></div>
+    <div id="pager"></div>
+  </main>
+</div>
+
+<dialog id="gameModal">
+  <div id="modalContent"></div>
+</dialog>
+
+<dialog id="settingsModal">
+  <div class="settings-body">
+    <h2>Settings</h2>
+    <label>Theme
+      <select id="themeSelect"></select>
+    </label>
+    <div class="settings-field">
+      <span>My data (ratings, notes, status, shortlist)</span>
+      <span class="settings-row">
+        <button id="exportBtn" title="Download your ratings, notes, statuses and shortlist as JSON">⬇ Export</button>
+        <button id="importBtn" title="Restore from a previously exported JSON file">⬆ Import</button>
+      </span>
+    </div>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
+    <div class="settings-field">
+      <span>Database (full catalogue + my data)</span>
+      <span class="settings-row">
+        <button id="exportDbBtn" title="Download the whole SQLite database">⬇ Export DB</button>
+        <button id="importDbBtn" title="Replace the whole database with an exported .db file">⬆ Import DB</button>
+      </span>
+    </div>
+    <input type="file" id="importDbFile" accept=".db" hidden>
+    <div class="settings-field">
+      <span>Source matching</span>
+      <span class="settings-row">
+        <button id="reviewBtn">🔎 Review matches <span id="reviewCount"></span></button>
+      </span>
+    </div>
+    <button class="settings-close" onclick="document.getElementById('settingsModal').close()">✕ close</button>
+  </div>
+</dialog>
+
+<dialog id="reviewModal">
+  <div id="reviewContent"></div>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

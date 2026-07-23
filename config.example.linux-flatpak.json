@@ -1,0 +1,4 @@
+{
+  "gamesDir": "~/dosgames",
+  "dosbox": ["flatpak", "run", "com.dosbox.DOSBox"]
+}

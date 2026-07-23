@@ -1,0 +1,22 @@
+{
+  "name": "dosvault",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "sync": "npm run sync:myabandonware && npm run sync:archiveorg && npm run sync:dosgamesarchive",
+    "sync:myabandonware": "node sync-myabandonware.js",
+    "sync:archiveorg": "node sync-archiveorg.js",
+    "sync:dosgamesarchive": "node sync-dosgamesarchive.js"
+  },
+  "keywords": [],
+  "author": "Gareth Stretton",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^13.0.1",
+    "cheerio": "^1.2.0",
+    "express": "^5.2.1"
+  }
+}
