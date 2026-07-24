@@ -755,22 +755,46 @@ app.post('/api/import-db', express.raw({ type: () => true, limit: '1gb' }), (req
 });
 
 app.get('/api/facets', (req, res) => {
-  const facet = (col) => db.prepare(`
-    SELECT json_each.value AS v, count(*) AS c FROM games g, json_each(g.${col})
-    GROUP BY v ORDER BY v COLLATE NOCASE ASC`).all();
+  // facet lists honour whatever filters are passed (the client sends the current
+  // ones when the "narrow filters" setting is on). Each facet omits its own
+  // selection, so after picking a genre the other genres stay pickable.
+  const filteredWhere = (omitKey) => {
+    const q = { ...req.query };
+    delete q[omitKey];
+    const params = {};
+    return { where: buildFilters(q, params), params };
+  };
+  const facet = (col, omitKey) => {
+    const { where, params } = filteredWhere(omitKey);
+    return db.prepare(`
+      SELECT json_each.value AS v, count(*) AS c ${FROM_GAMES}, json_each(g.${col})
+      ${where} GROUP BY v ORDER BY v COLLATE NOCASE ASC`).all(params);
+  };
+  const sourceFacet = () => {
+    const { where, params } = filteredWhere('source');
+    return db.prepare(`
+      SELECT gs2.source AS v, count(*) AS c ${FROM_GAMES}
+      JOIN game_sources gs2 ON gs2.game_id = g.id
+      ${where} GROUP BY gs2.source ORDER BY gs2.source`).all(params);
+  };
+  const tagFacet = () => {
+    const { where, params } = filteredWhere('tag');
+    return db.prepare(`
+      SELECT t.name AS v, count(*) AS c ${FROM_GAMES}
+      JOIN game_tags gtf ON gtf.game_id = g.id JOIN tags t ON t.id = gtf.tag_id
+      ${where} GROUP BY t.id ORDER BY t.name COLLATE NOCASE`).all(params);
+  };
   const years = db.prepare('SELECT min(year) lo, max(year) hi FROM games WHERE year IS NOT NULL').get();
   const progress = db.prepare(`SELECT
     (SELECT count(*) FROM games) total,
     (SELECT count(*) FROM games WHERE detail_scraped = 1) scraped`).get();
-  const sources = db.prepare(`
-    SELECT source AS v, count(*) AS c FROM game_sources GROUP BY source ORDER BY source`).all();
-  const tags = db.prepare(`
-    SELECT t.name AS v, count(gt.game_id) AS c FROM tags t
-    LEFT JOIN game_tags gt ON gt.tag_id = t.id
-    GROUP BY t.id ORDER BY t.name COLLATE NOCASE`).all();
   res.json({
-    genres: facet('genres'), themes: facet('themes'), perspectives: facet('perspectives'),
-    releasedIn: facet('released_in'), sources, tags, years, progress,
+    genres: facet('genres', 'genre'), themes: facet('themes', 'theme'),
+    perspectives: facet('perspectives', 'perspective'), releasedIn: facet('released_in', 'releasedIn'),
+    sources: sourceFacet(), tags: tagFacet(),
+    // full list regardless of filters — the modal's tag type-ahead must see every tag
+    tagNames: db.prepare('SELECT name FROM tags ORDER BY name COLLATE NOCASE').all().map((r) => r.name),
+    years, progress,
   });
 });
 

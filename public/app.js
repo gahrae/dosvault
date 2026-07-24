@@ -35,6 +35,14 @@ $('#themeSelect').innerHTML = THEMES.map((t) => `<option value="${t.id}">${esc(t
 $('#themeSelect').value = localStorage.getItem('theme') || 'midnight';
 applyTheme($('#themeSelect').value);
 $('#themeSelect').addEventListener('change', () => applyTheme($('#themeSelect').value));
+// narrow-filters setting: facet lists only show options matching the current results
+const narrowFacets = () => localStorage.getItem('narrowFacets') === '1';
+$('#narrowFacetsChk').checked = narrowFacets();
+$('#narrowFacetsChk').addEventListener('change', () => {
+  localStorage.setItem('narrowFacets', $('#narrowFacetsChk').checked ? '1' : '0');
+  loadFacets();
+});
+
 $('#settingsBtn').addEventListener('click', () => { $('#settingsModal').showModal(); mountToasts(); });
 $('#settingsModal').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) e.currentTarget.close();
@@ -262,6 +270,7 @@ async function loadGames() {
   const res = await fetch('/api/games?' + p);
   const data = await res.json();
   renderResults(data);
+  if (narrowFacets()) loadFacets(); // keep the option lists in step with the results
 }
 
 function stars(n, cls) {
@@ -668,14 +677,20 @@ async function updateShortlistCount() {
 
 // ---------- scrape progress ----------
 async function loadFacets() {
-  const res = await fetch('/api/facets');
+  // narrow mode sends the current filters so lists shrink to what still matches;
+  // otherwise ask for the plain global lists (includeHidden matches old behavior)
+  const qs = narrowFacets() ? filterParams() : new URLSearchParams({ includeHidden: '1' });
+  const res = await fetch('/api/facets?' + qs);
   const f = await res.json();
   const fill = (sel, items) => {
     const el = $(sel);
     const multi = el.multiple;
     const cur = multi ? [...el.selectedOptions].map((o) => o.value) : el.value;
+    // a selected value must stay listed even when narrowing leaves it no matches
+    const have = new Set(items.map((i) => i.v));
+    const opts = items.concat((multi ? cur : [cur]).filter((v) => v && !have.has(v)).map((v) => ({ v, c: 0 })));
     el.innerHTML = (multi ? '' : '<option value="">All</option>') +
-      items.map((i) => `<option value="${esc(i.v)}">${esc(i.label || i.v)} (${i.c})</option>`).join('');
+      opts.map((i) => `<option value="${esc(i.v)}">${esc(i.label || i.v)} (${i.c})</option>`).join('');
     if (multi) [...el.options].forEach((o) => { o.selected = cur.includes(o.value); });
     else el.value = cur;
   };
@@ -684,9 +699,9 @@ async function loadFacets() {
   fill('#fPerspective', f.perspectives);
   fill('#fReleasedIn', f.releasedIn);
   fill('#fSource', (f.sources || []).map((s) => ({ ...s, label: SOURCE_NAMES[s.v] || s.v })));
-  allTags = (f.tags || []).map((t) => t.v);
+  allTags = f.tagNames || (f.tags || []).map((t) => t.v); // full list, for the modal type-ahead
   fill('#fTag', f.tags || []);
-  $('#fTagWrap').hidden = !allTags.length; // no point offering a filter before any tag exists
+  $('#fTagWrap').hidden = !$('#fTag').options.length; // no point offering a filter with nothing to pick
   const pr = f.progress;
   const el = $('#scrapeProgress');
   if (pr.scraped < pr.total) {
