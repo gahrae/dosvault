@@ -571,6 +571,33 @@ app.delete('/api/games/:id/tags', (req, res) => {
   res.json(attachInstall(row));
 });
 
+// ---------- saved filter presets ----------
+
+app.get('/api/presets', (req, res) => {
+  const rows = db.prepare('SELECT name, filters FROM filter_presets ORDER BY name COLLATE NOCASE').all();
+  res.json(rows.map((r) => ({ name: r.name, filters: JSON.parse(r.filters) })));
+});
+
+// upsert: saving under an existing name (case-insensitively) overwrites it
+app.post('/api/presets', (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+  const filters = req.body && req.body.filters;
+  if (!name) return res.status(400).json({ error: 'preset name required' });
+  if (!filters || typeof filters !== 'object') return res.status(400).json({ error: 'filters object required' });
+  db.prepare(`
+    INSERT INTO filter_presets (name, filters, updated_at) VALUES (?, ?, datetime('now'))
+    ON CONFLICT(name) DO UPDATE SET filters = excluded.filters, updated_at = datetime('now')
+  `).run(name, JSON.stringify(filters));
+  res.json({ ok: true, name });
+});
+
+app.delete('/api/presets', (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim();
+  const gone = db.prepare('DELETE FROM filter_presets WHERE name = ?').run(name).changes;
+  if (!gone) return res.status(404).json({ error: 'preset not found' });
+  res.json({ ok: true });
+});
+
 // ---------- user data export / import ----------
 
 app.get('/api/export', (req, res) => {
@@ -592,9 +619,11 @@ app.get('/api/export', (req, res) => {
     if (!r) { r = { slug }; bySlug.set(slug, r); rows.push(r); }
     (r.tags = r.tags || []).push(name);
   }
+  const presets = db.prepare('SELECT name, filters FROM filter_presets ORDER BY name COLLATE NOCASE').all()
+    .map((r) => ({ name: r.name, filters: JSON.parse(r.filters) }));
   res.setHeader('Content-Disposition',
     `attachment; filename="dosvault-export-${new Date().toISOString().slice(0, 10)}.json"`);
-  res.json({ app: 'dosvault', version: 2, exported_at: new Date().toISOString(), games: rows });
+  res.json({ app: 'dosvault', version: 2, exported_at: new Date().toISOString(), games: rows, presets });
 });
 
 app.post('/api/import', (req, res) => {
@@ -635,6 +664,15 @@ app.post('/api/import', (req, res) => {
       imported++;
     }
     db.exec('DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM game_tags)');
+    if (Array.isArray(req.body.presets)) {
+      const upPreset = db.prepare(`
+        INSERT INTO filter_presets (name, filters, updated_at) VALUES (?, ?, datetime('now'))
+        ON CONFLICT(name) DO UPDATE SET filters = excluded.filters, updated_at = datetime('now')`);
+      for (const p of req.body.presets) {
+        const name = p && typeof p.name === 'string' ? p.name.trim().slice(0, 60) : '';
+        if (name && p.filters && typeof p.filters === 'object') upPreset.run(name, JSON.stringify(p.filters));
+      }
+    }
   })();
   res.json({ imported, missing });
 });
@@ -733,8 +771,8 @@ app.post('/api/import-db', express.raw({ type: () => true, limit: '1gb' }), (req
     try {
       const cols = (schema, t) => db.prepare(`SELECT name FROM ${schema}.pragma_table_info(?)`).all(t).map((r) => r.name);
       db.transaction(() => {
-        for (const t of ['game_tags', 'tags', 'user_data', 'scrape_state', 'game_sources', 'match_review', 'games']) db.exec(`DELETE FROM ${t}`);
-        for (const t of ['games', 'tags', 'game_tags', 'user_data', 'scrape_state', 'game_sources', 'match_review']) {
+        for (const t of ['game_tags', 'tags', 'filter_presets', 'user_data', 'scrape_state', 'game_sources', 'match_review', 'games']) db.exec(`DELETE FROM ${t}`);
+        for (const t of ['games', 'tags', 'game_tags', 'filter_presets', 'user_data', 'scrape_state', 'game_sources', 'match_review']) {
           if (!tables.includes(t)) continue;
           const common = cols('main', t).filter((c) => cols('imp', t).includes(c)).join(', ');
           db.exec(`INSERT INTO main.${t} (${common}) SELECT ${common} FROM imp.${t}`);

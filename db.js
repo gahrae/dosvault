@@ -153,6 +153,12 @@ CREATE TABLE IF NOT EXISTS game_tags (
   PRIMARY KEY (game_id, tag_id)
 );
 CREATE INDEX IF NOT EXISTS idx_game_tags_tag ON game_tags(tag_id);
+
+CREATE TABLE IF NOT EXISTS filter_presets (
+  name TEXT PRIMARY KEY COLLATE NOCASE,
+  filters TEXT NOT NULL,
+  updated_at TEXT
+);
 `);
 
 module.exports = { db, DATA_DIR, IMAGES_DIR };

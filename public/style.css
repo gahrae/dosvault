@@ -130,6 +130,9 @@ aside select[multiple] { padding: .15rem; }
 aside select[multiple] option { padding: .1rem .35rem; }
 aside select[multiple] option:checked { background: var(--accent); color: var(--on-accent); }
 aside .row { display: flex; gap: .5rem; }
+.preset-row { margin-bottom: .3rem; padding-bottom: .6rem; border-bottom: 1px dashed var(--border); }
+.preset-row input { flex: 1; min-width: 0; }
+.preset-row button { padding: .25rem .5rem; flex-shrink: 0; }
 .era-chips { display: flex; flex-wrap: wrap; gap: .3rem; }
 .era-chips button { font-size: .7rem; padding: .2rem .45rem; }
 

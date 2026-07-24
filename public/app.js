@@ -265,6 +265,92 @@ function filterParams() {
   return p;
 }
 
+// ---------- saved filter presets ----------
+let presets = [];
+
+const CHECK_IDS = ['fRated', 'fHasNotes', 'fInstalled'];
+
+function captureFilters() {
+  const s = { q: $('#search').value.trim() };
+  for (const id of FILTER_IDS) {
+    const el = $('#' + id);
+    s[id] = el.multiple ? [...el.selectedOptions].map((o) => o.value) : el.value;
+  }
+  for (const id of CHECK_IDS) s[id] = $('#' + id).checked;
+  return s;
+}
+
+function applyFilters(s) {
+  $('#search').value = s.q || '';
+  for (const id of FILTER_IDS) {
+    const el = $('#' + id);
+    if (el.multiple) {
+      const want = new Set(s[id] || []);
+      // narrow mode may have pruned saved values from the list — put them back
+      for (const v of want) {
+        if (![...el.options].some((o) => o.value === v)) el.add(new Option(`${v} (0)`, v));
+      }
+      [...el.options].forEach((o) => { o.selected = want.has(o.value); });
+    } else if (el.tagName === 'INPUT') {
+      el.value = s[id] || '';
+    } else {
+      const v = s[id] || (id === 'fSort' ? 'title' : '');
+      if (v && ![...el.options].some((o) => o.value === v)) el.add(new Option(`${v} (0)`, v));
+      el.value = v;
+    }
+  }
+  for (const id of CHECK_IDS) $('#' + id).checked = !!s[id];
+  state.page = 1;
+  loadGames();
+}
+
+async function loadPresets(selectName) {
+  presets = await (await fetch('/api/presets')).json();
+  const sel = $('#fPreset');
+  const cur = selectName !== undefined ? selectName : sel.value;
+  sel.innerHTML = '<option value="">—</option>' +
+    presets.map((p) => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+  sel.value = presets.some((p) => p.name === cur) ? cur : '';
+}
+
+$('#fPreset').addEventListener('change', () => {
+  const p = presets.find((x) => x.name === $('#fPreset').value);
+  if (!p) return;
+  $('#presetName').value = p.name;
+  applyFilters(p.filters);
+});
+
+$('#savePreset').addEventListener('click', async () => {
+  const name = $('#presetName').value.trim() || $('#fPreset').value;
+  if (!name) return toast('Type a name for the saved filter first.', { type: 'error' });
+  const res = await fetch('/api/presets', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, filters: captureFilters() }),
+  });
+  const out = await res.json();
+  if (!res.ok) return toast('Save failed: ' + (out.error || res.status), { type: 'error' });
+  await loadPresets(out.name);
+  $('#presetName').value = out.name;
+  toast(`Saved filter "${out.name}"`);
+});
+
+$('#delPreset').addEventListener('click', async () => {
+  const name = $('#fPreset').value;
+  if (!name) return toast('Select a saved filter to delete.', { type: 'error' });
+  const res = await fetch('/api/presets', {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const out = await res.json();
+  if (!res.ok) return toast('Delete failed: ' + (out.error || res.status), { type: 'error' });
+  $('#presetName').value = '';
+  await loadPresets('');
+  toast(`Deleted saved filter "${name}"`);
+});
+
+// any manual filter change means the sidebar no longer matches the chosen preset
+const unselectPreset = () => { $('#fPreset').value = ''; };
+
 async function loadGames() {
   const p = filterParams();
   p.set('page', state.page);
@@ -734,15 +820,17 @@ $('#surpriseBtn').addEventListener('click', async () => {
 let searchTimer = null;
 $('#search').addEventListener('input', () => {
   clearTimeout(searchTimer);
+  unselectPreset();
   searchTimer = setTimeout(() => { state.page = 1; loadGames(); }, 300);
 });
 
-FILTER_IDS.forEach((id) => $('#' + id).addEventListener('change', () => { state.page = 1; loadGames(); }));
-['fRated', 'fHasNotes', 'fInstalled'].forEach((id) => $('#' + id).addEventListener('change', () => { state.page = 1; loadGames(); }));
+FILTER_IDS.forEach((id) => $('#' + id).addEventListener('change', () => { unselectPreset(); state.page = 1; loadGames(); }));
+CHECK_IDS.forEach((id) => $('#' + id).addEventListener('change', () => { unselectPreset(); state.page = 1; loadGames(); }));
 
 document.querySelectorAll('.era-chips button').forEach((b) => b.addEventListener('click', () => {
   const [lo, hi] = b.dataset.era.split(',');
   $('#fYearMin').value = lo; $('#fYearMax').value = hi;
+  unselectPreset();
   state.page = 1; loadGames();
 }));
 
@@ -754,6 +842,8 @@ function resetFilters() {
     else el.value = id === 'fSort' ? 'title' : '';
   });
   $('#fRated').checked = false; $('#fHasNotes').checked = false; $('#fInstalled').checked = false;
+  unselectPreset();
+  $('#presetName').value = '';
 }
 
 $('#clearFilters').addEventListener('click', () => {
@@ -791,6 +881,7 @@ $('#gameModal').addEventListener('click', (e) => {
 });
 
 loadFacets();
+loadPresets();
 loadGames();
 updateShortlistCount();
 updateReviewCount();

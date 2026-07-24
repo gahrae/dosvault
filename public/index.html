@@ -20,6 +20,13 @@
 
 <div class="layout">
   <aside id="filters">
+    <label>Saved filters
+      <select id="fPreset"><option value="">—</option></select></label>
+    <div class="row preset-row">
+      <input type="text" id="presetName" placeholder="name..." maxlength="60">
+      <button id="savePreset" title="Save the current filters under this name">💾</button>
+      <button id="delPreset" title="Delete the selected saved filter">🗑</button>
+    </div>
     <input type="search" id="search" placeholder="Search title / description...">
     <label title="Ctrl-click to select several; empty selection means all">Genre
       <select id="fGenre" multiple size="4"></select></label>
