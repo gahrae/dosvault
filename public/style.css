@@ -253,6 +253,14 @@ textarea#notes {
   font-family: inherit; font-size: .85rem; padding: .5rem; min-height: 90px; width: 100%; resize: vertical;
 }
 .save-hint { font-size: .7rem; color: var(--dim); }
+.custom-run { margin-top: .6rem; font-size: .8rem; }
+.custom-run summary { cursor: pointer; color: var(--dim); user-select: none; }
+.custom-run textarea {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  font-family: inherit; font-size: .8rem; padding: .4rem .5rem; margin-top: .4rem;
+  width: 100%; min-height: 70px; resize: vertical; white-space: pre;
+}
+.custom-run-actions { display: flex; gap: .8rem; align-items: center; margin-top: .3rem; }
 
 .sl-list { display: flex; flex-direction: column; gap: .5rem; }
 .sl-item {

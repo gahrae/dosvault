@@ -101,7 +101,7 @@ const GAME_COLS = `g.id, g.slug, s.source_url AS url, g.title, g.alt_names, g.ye
   g.themes, g.perspectives, g.publisher, g.developer, g.dosbox, g.description,
   g.community_rating, g.community_votes, g.thumb, g.thumb_url, g.screenshot_count, s.download_url,
   u.rating AS my_rating, u.notes, coalesce(u.status,'none') AS status,
-  coalesce(u.shortlisted,0) AS shortlisted, u.shortlist_order, u.install_path, u.run_exe,
+  coalesce(u.shortlisted,0) AS shortlisted, u.shortlist_order, u.install_path, u.run_exe, u.run_custom,
   (SELECT json_group_array(json_object(
      'source', gs.source, 'url', gs.source_url, 'availability', gs.availability,
      'hasDownload', gs.download_url IS NOT NULL))
@@ -450,14 +450,32 @@ app.post('/api/games/:id/uninstall', (req, res) => {
   res.json(attachInstall(row));
 });
 
+function launchDosbox(cmds) {
+  const [cmd, ...args] = [...config.dosbox, ...cmds.flatMap((c) => ['-c', c])];
+  spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
+}
+
 app.post('/api/games/:id/run', (req, res) => {
   if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'bad id' });
   const id = +req.params.id;
-  const u = db.prepare('SELECT install_path, run_exe FROM user_data WHERE game_id = ?').get(id);
+  const u = db.prepare('SELECT install_path, run_exe, run_custom FROM user_data WHERE game_id = ?').get(id);
   if (!u || !u.install_path || !fs.existsSync(u.install_path)) {
     return res.status(400).json({ error: 'not installed' });
   }
   const images = findCdImages(u.install_path);
+  // custom script: user-authored DOSBox commands, run after the usual D:/E:
+  // mounts so the game dir and any CD images are available to them
+  if (req.body.custom) {
+    const script = String(u.run_custom || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (!script.length) return res.status(400).json({ error: 'no custom run commands saved' });
+    const cmds = [`mount d "${path.resolve(u.install_path)}"`];
+    if (images.length) {
+      cmds.push(`imgmount e ${images.map((i) => `"${path.resolve(u.install_path, i)}"`).join(' ')} -t iso`);
+    }
+    cmds.push(...script);
+    launchDosbox(cmds);
+    return res.json({ ok: true, custom: true });
+  }
   const exes = listAllExecutables(u.install_path);
   // only exes we enumerated ourselves may run — this also blocks path traversal
   const saved = exes.includes(u.run_exe) ? u.run_exe : null;
@@ -485,10 +503,24 @@ app.post('/api/games/:id/run', (req, res) => {
     const full = path.resolve(u.install_path, exe);
     cmds.push(`mount d "${path.dirname(full)}"`, 'd:', path.basename(full));
   }
-  const [cmd, ...args] = [...config.dosbox, ...cmds.flatMap((c) => ['-c', c])];
-  spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
+  launchDosbox(cmds);
   if (exe) db.prepare('UPDATE user_data SET run_exe = ? WHERE game_id = ?').run(exe, id);
   res.json({ ok: true, exe });
+});
+
+// save the per-game custom DOSBox command script (empty clears it)
+app.post('/api/games/:id/run-custom', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'bad id' });
+  const id = +req.params.id;
+  if (!db.prepare('SELECT 1 FROM games WHERE id = ?').get(id)) return res.status(404).json({ error: 'no such game' });
+  const raw = typeof req.body.commands === 'string' ? req.body.commands : '';
+  const text = raw.split(/\r?\n/).map((l) => l.replace(/\s+$/, '')).join('\n')
+    .replace(/\n+$/, '').slice(0, 2000) || null;
+  db.prepare(`
+    INSERT INTO user_data (game_id, run_custom, updated_at) VALUES (?, ?, datetime('now'))
+    ON CONFLICT(game_id) DO UPDATE SET run_custom = excluded.run_custom, updated_at = datetime('now')
+  `).run(id, text);
+  res.json({ ok: true, run_custom: text });
 });
 
 const upsertUser = db.prepare(`
@@ -603,10 +635,11 @@ app.delete('/api/presets', (req, res) => {
 
 app.get('/api/export', (req, res) => {
   const rows = db.prepare(`
-    SELECT g.slug, u.rating, u.notes, u.status, u.shortlisted, u.shortlist_order, u.run_exe
+    SELECT g.slug, u.rating, u.notes, u.status, u.shortlisted, u.shortlist_order, u.run_exe, u.run_custom
     FROM user_data u JOIN games g ON g.id = u.game_id
     WHERE u.rating IS NOT NULL OR (u.notes IS NOT NULL AND u.notes != '')
        OR coalesce(u.status, 'none') != 'none' OR u.shortlisted = 1 OR u.run_exe IS NOT NULL
+       OR u.run_custom IS NOT NULL
   `).all();
   // tags live in game_tags, not user_data — merge them in, adding rows for tag-only games
   const bySlug = new Map(rows.map((r) => [r.slug, r]));
@@ -632,11 +665,11 @@ app.post('/api/import', (req, res) => {
   if (!list) return res.status(400).json({ error: 'not a valid export file (missing games array)' });
   const bySlug = db.prepare('SELECT id FROM games WHERE slug = ?');
   const up = db.prepare(`
-    INSERT INTO user_data (game_id, rating, notes, status, shortlisted, shortlist_order, run_exe, updated_at)
-    VALUES (@game_id, @rating, @notes, @status, @shortlisted, @shortlist_order, @run_exe, datetime('now'))
+    INSERT INTO user_data (game_id, rating, notes, status, shortlisted, shortlist_order, run_exe, run_custom, updated_at)
+    VALUES (@game_id, @rating, @notes, @status, @shortlisted, @shortlist_order, @run_exe, @run_custom, datetime('now'))
     ON CONFLICT(game_id) DO UPDATE SET
       rating = @rating, notes = @notes, status = @status, shortlisted = @shortlisted,
-      shortlist_order = @shortlist_order, run_exe = @run_exe, updated_at = datetime('now')
+      shortlist_order = @shortlist_order, run_exe = @run_exe, run_custom = @run_custom, updated_at = datetime('now')
   `);
   const delTags = db.prepare('DELETE FROM game_tags WHERE game_id = ?');
   const linkTag = db.prepare('INSERT OR IGNORE INTO game_tags (game_id, tag_id) VALUES (?, ?)');
@@ -661,6 +694,7 @@ app.post('/api/import', (req, res) => {
         shortlisted: it.shortlisted ? 1 : 0,
         shortlist_order: it.shortlist_order != null ? +it.shortlist_order : null,
         run_exe: typeof it.run_exe === 'string' ? it.run_exe : null,
+        run_custom: typeof it.run_custom === 'string' ? it.run_custom : null,
       });
       imported++;
     }

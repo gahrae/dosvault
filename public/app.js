@@ -7,6 +7,7 @@ const imgSrc = (g) => g.thumb ? `/images/${encodeURIComponent(g.thumb)}` : (g.th
 let state = { tab: 'browse', page: 1 };
 let currentGame = null;
 let notesTimer = null;
+let customTimer = null;
 let allTags = []; // every existing tag name, for type-ahead suggestions (kept fresh by loadFacets)
 
 // ---------- themes ----------
@@ -510,6 +511,14 @@ function renderModal() {
           ${g.installed ? '<button id="uninstallBtn" title="Delete the game folder">🗑 Uninstall</button>' : ''}
         </div>
         ${g.installed ? `<div class="install-path">installed at <a href="#" id="openFolder" title="Open in file manager">${esc(g.install_path)}</a></div>` : ''}
+        ${g.installed ? `<details class="custom-run"${g.run_custom ? ' open' : ''}>
+          <summary>⌨ Custom run commands</summary>
+          <textarea id="customCmds" rows="4" spellcheck="false" placeholder="DOSBox commands, one per line, e.g.&#10;c:&#10;cd GAMES\\SKYNET&#10;skynet.exe">${esc(g.run_custom || '')}</textarea>
+          <div class="custom-run-actions">
+            <button id="customRunBtn">▶ Run custom</button>
+            <span class="save-hint" id="customSaveHint">auto-saves &middot; runs after the usual D: mount${g.cd_images?.length ? ' and E: CD mount' : ''}</span>
+          </div>
+        </details>` : ''}
       </div>
     </div>
     ${g.description ? `<div class="desc">${esc(g.description)}</div>` : ''}
@@ -573,6 +582,37 @@ function renderModal() {
     const btn = $('#runBtn');
     btn.textContent = '▶ Launched!';
     setTimeout(() => { btn.textContent = '▶ Run'; }, 2000);
+  });
+
+  const saveCustom = async () => {
+    const res = await fetch(`/api/games/${g.id}/run-custom`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commands: $('#customCmds').value }),
+    });
+    const data = await res.json();
+    if (res.ok) currentGame.run_custom = data.run_custom;
+    return res.ok;
+  };
+  $('#customCmds')?.addEventListener('input', () => {
+    clearTimeout(customTimer);
+    $('#customSaveHint').textContent = 'saving...';
+    customTimer = setTimeout(async () => {
+      $('#customSaveHint').textContent = (await saveCustom()) ? 'saved ✔' : 'save failed ✖';
+    }, 600);
+  });
+  $('#customRunBtn')?.addEventListener('click', async () => {
+    clearTimeout(customTimer); // flush any pending edit before running
+    if (!$('#customCmds').value.trim()) return toast('Type some commands first', { type: 'error' });
+    if (!(await saveCustom())) return toast('Could not save commands', { type: 'error', ms: 8000 });
+    $('#customSaveHint').textContent = 'saved ✔';
+    const res = await fetch(`/api/games/${g.id}/run`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ custom: true }),
+    });
+    const data = await res.json();
+    if (!res.ok) return toast('Run failed: ' + (data.error || res.status), { type: 'error', ms: 8000 });
+    const btn = $('#customRunBtn');
+    btn.textContent = '▶ Launched!';
+    setTimeout(() => { if (btn.isConnected) btn.textContent = '▶ Run custom'; }, 2000);
   });
 
   $('#starWidget').addEventListener('click', (e) => {

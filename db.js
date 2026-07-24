@@ -78,6 +78,7 @@ END;
 const userCols = db.prepare('PRAGMA table_info(user_data)').all().map((c) => c.name);
 if (!userCols.includes('install_path')) db.exec('ALTER TABLE user_data ADD COLUMN install_path TEXT');
 if (!userCols.includes('run_exe')) db.exec('ALTER TABLE user_data ADD COLUMN run_exe TEXT');
+if (!userCols.includes('run_custom')) db.exec('ALTER TABLE user_data ADD COLUMN run_custom TEXT');
 
 // which source first contributed a game to the catalogue; the myabandonware
 // scraper must only re-crawl its own rows

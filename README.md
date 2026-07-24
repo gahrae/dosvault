@@ -94,11 +94,17 @@ thumbnails on both sides and undo on every action:
   (PDF/text) into the game's folder, with a live retro console showing progress.
 - Run button: launches the game in DOSBox, remembering which executable you
   picked per game. A link opens the install folder in your file manager.
-- CD-ROM games: installs containing a disc image (.iso, .cue/.bin) get it
-  mounted automatically (`IMGMOUNT E:` with the game folder on D:), and
-  executables found inside the ISO show in the run picker marked 💿 — run the
-  CD's installer once, then the installed copy on D: appears in the picker.
-  Multi-disc games mount all images (swap discs with Ctrl+F4 in DOSBox).
+- CD-ROM games: installs containing a disc image (.iso, .cue/.bin, or a
+  CloneCD .img) get it mounted automatically (`IMGMOUNT E:` with the game
+  folder on D:), and executables found inside the ISO show in the run picker
+  marked 💿 — run the CD's installer once, then the installed copy on D:
+  appears in the picker. Multi-disc games mount all images (swap discs with
+  Ctrl+F4 in DOSBox).
+- Custom run commands: per game, an editable script of DOSBox commands (one
+  per line, e.g. `c:` / `cd GAMES\SKYNET` / `skynet.exe`) with its own
+  one-click "Run custom" button — handy when a game was installed from its CD
+  to a drive your DOSBox config mounts itself. The usual D:/E: mounts happen
+  first, then your commands. Auto-saved per game.
 - Shortlist with drag-to-reorder priority.
 - 1-5 star personal ratings and notes (auto-saved).
 - Play status: played / finished / abandoned / not interested ("not interested"
