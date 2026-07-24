@@ -213,6 +213,28 @@ a { color: var(--link); }
 .status-row { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
 .status-row button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .shortlist-btn.on { background: var(--amber); color: #000; border-color: var(--amber); }
+.tags-row { position: relative; }
+.tags-label { color: var(--dim); }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: var(--panel2); border: 1px solid var(--border);
+  padding: .15rem .5rem; font-size: .75rem;
+}
+.tag-chip button { background: none; border: none; padding: 0; color: var(--dim); font-size: .7rem; }
+.tag-chip button:hover { color: var(--text); }
+.tag-add { position: relative; }
+.tag-add input {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  font-family: inherit; font-size: .75rem; padding: .25rem .5rem; width: 160px;
+}
+#tagSuggest {
+  position: absolute; top: 100%; left: 0; z-index: 20; min-width: 100%;
+  background: var(--panel2); border: 1px solid var(--border);
+  max-height: 160px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0, 0, 0, .5);
+}
+#tagSuggest div { padding: .3rem .5rem; cursor: pointer; font-size: .75rem; white-space: nowrap; }
+#tagSuggest div:hover { background: var(--accent); color: var(--on-accent); }
+#tagSuggest .tag-new { border-top: 1px dashed var(--border); }
 textarea#notes {
   background: var(--bg); color: var(--text); border: 1px solid var(--border);
   font-family: inherit; font-size: .85rem; padding: .5rem; min-height: 90px; width: 100%; resize: vertical;

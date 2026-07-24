@@ -141,4 +141,18 @@ DELETE FROM game_sources WHERE source = 'myabandonware'
   AND game_id IN (SELECT id FROM games WHERE origin != 'myabandonware');
 `);
 
+// user-defined tags ("wife", "kids", ...); names are case-insensitively unique
+db.exec(`
+CREATE TABLE IF NOT EXISTS tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE
+);
+CREATE TABLE IF NOT EXISTS game_tags (
+  game_id INTEGER NOT NULL REFERENCES games(id),
+  tag_id INTEGER NOT NULL REFERENCES tags(id),
+  PRIMARY KEY (game_id, tag_id)
+);
+CREATE INDEX IF NOT EXISTS idx_game_tags_tag ON game_tags(tag_id);
+`);
+
 module.exports = { db, DATA_DIR, IMAGES_DIR };

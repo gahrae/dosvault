@@ -7,6 +7,7 @@ const imgSrc = (g) => g.thumb ? `/images/${encodeURIComponent(g.thumb)}` : (g.th
 let state = { tab: 'browse', page: 1 };
 let currentGame = null;
 let notesTimer = null;
+let allTags = []; // every existing tag name, for type-ahead suggestions (kept fresh by loadFacets)
 
 // ---------- themes ----------
 const THEMES = [
@@ -229,9 +230,9 @@ function toast(msg, { ms = 5000, type = '' } = {}) {
   });
 }
 
-const FILTER_IDS = ['fGenre', 'fTheme', 'fPerspective', 'fReleasedIn', 'fSource', 'fYearMin', 'fYearMax', 'fMinRating', 'fMinVotes', 'fStatus', 'fSort'];
+const FILTER_IDS = ['fGenre', 'fTheme', 'fPerspective', 'fTag', 'fReleasedIn', 'fSource', 'fYearMin', 'fYearMax', 'fMinRating', 'fMinVotes', 'fStatus', 'fSort'];
 
-const MULTI_FILTERS = { fGenre: 'genre', fTheme: 'theme', fPerspective: 'perspective' };
+const MULTI_FILTERS = { fGenre: 'genre', fTheme: 'theme', fPerspective: 'perspective', fTag: 'tag' };
 
 function filterParams() {
   const p = new URLSearchParams();
@@ -401,6 +402,14 @@ function renderModal() {
         ${['played', 'finished', 'abandoned', 'not_interested'].map((s) =>
           `<button data-status="${s}" class="${g.status === s ? 'on' : ''}">${s.replace('_', ' ')}</button>`).join('')}
       </div>
+      <div class="status-row tags-row">
+        <span class="tags-label" title="My tags">🏷</span>
+        ${j(g.tags).map((t) => `<span class="tag-chip">${esc(t)}<button data-untag="${esc(t)}" title="Remove tag">✕</button></span>`).join('')}
+        <span class="tag-add">
+          <input id="tagInput" placeholder="+ tag (wife, kids...)" autocomplete="off" maxlength="40">
+          <div id="tagSuggest" hidden></div>
+        </span>
+      </div>
       <textarea id="notes" placeholder="Notes (cheats, setup quirks, memories...)">${esc(g.notes || '')}</textarea>
       <span class="save-hint" id="saveHint">notes auto-save</span>
     </div>`;
@@ -452,6 +461,30 @@ function renderModal() {
   $('#shortToggle').addEventListener('click', () => patchUser({ shortlisted: !currentGame.shortlisted }));
   document.querySelectorAll('[data-status]').forEach((b) =>
     b.addEventListener('click', () => patchUser({ status: currentGame.status === b.dataset.status ? 'none' : b.dataset.status })));
+  $('.tags-row').addEventListener('click', (e) => {
+    const un = e.target.closest('[data-untag]');
+    if (un) return removeTag(un.dataset.untag);
+    const add = e.target.closest('[data-addtag]');
+    if (add) return addTag(add.dataset.addtag);
+  });
+  const tagInput = $('#tagInput');
+  tagInput.addEventListener('input', showTagSuggestions);
+  tagInput.addEventListener('focus', showTagSuggestions);
+  // delay so a click on a suggestion lands before the dropdown hides
+  tagInput.addEventListener('blur', () => setTimeout(() => { const s = $('#tagSuggest'); if (s) s.hidden = true; }, 200));
+  tagInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const v = tagInput.value.trim();
+      if (!v) return;
+      // reuse an existing tag's exact casing when the typed name matches one
+      addTag(allTags.find((t) => t.toLowerCase() === v.toLowerCase()) || v);
+    } else if (e.key === 'Escape' && !$('#tagSuggest').hidden) {
+      e.preventDefault(); // just close the dropdown, not the whole dialog
+      $('#tagSuggest').hidden = true;
+    }
+  });
+
   $('#notes').addEventListener('input', () => {
     clearTimeout(notesTimer);
     $('#saveHint').textContent = 'saving...';
@@ -460,6 +493,37 @@ function renderModal() {
       $('#saveHint').textContent = 'saved ✔';
     }, 600);
   });
+}
+
+// ---------- tags ----------
+function showTagSuggestions() {
+  const box = $('#tagSuggest');
+  const v = $('#tagInput').value.trim();
+  const mine = new Set(j(currentGame.tags).map((t) => t.toLowerCase()));
+  const matches = allTags.filter((t) => !mine.has(t.toLowerCase())
+    && (!v || t.toLowerCase().includes(v.toLowerCase())));
+  const isNew = v && !allTags.some((t) => t.toLowerCase() === v.toLowerCase()) && !mine.has(v.toLowerCase());
+  box.innerHTML = matches.map((t) => `<div data-addtag="${esc(t)}">🏷 ${esc(t)}</div>`).join('')
+    + (isNew ? `<div data-addtag="${esc(v)}" class="tag-new">➕ create "${esc(v)}"</div>` : '');
+  box.hidden = !box.innerHTML;
+}
+
+const addTag = (name) => tagRequest('POST', name);
+const removeTag = (name) => tagRequest('DELETE', name);
+
+async function tagRequest(method, name) {
+  const res = await fetch(`/api/games/${currentGame.id}/tags`, {
+    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (!res.ok) return toast('Tag update failed: ' + (data.error || res.status), { type: 'error' });
+  const notesVal = $('#notes')?.value;
+  currentGame = data;
+  renderModal();
+  if (notesVal !== undefined) $('#notes').value = notesVal;
+  if (method === 'POST') $('#tagInput').focus();
+  loadFacets(); // refresh the sidebar tag filter + suggestion list
+  loadGames();
 }
 
 // ---------- find similar ----------
@@ -620,6 +684,9 @@ async function loadFacets() {
   fill('#fPerspective', f.perspectives);
   fill('#fReleasedIn', f.releasedIn);
   fill('#fSource', (f.sources || []).map((s) => ({ ...s, label: SOURCE_NAMES[s.v] || s.v })));
+  allTags = (f.tags || []).map((t) => t.v);
+  fill('#fTag', f.tags || []);
+  $('#fTagWrap').hidden = !allTags.length; // no point offering a filter before any tag exists
   const pr = f.progress;
   const el = $('#scrapeProgress');
   if (pr.scraped < pr.total) {

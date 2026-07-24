@@ -52,6 +52,13 @@ function buildFilters(query, params) {
       where.push(`EXISTS (SELECT 1 FROM json_each(g.${col}) WHERE json_each.value IN (${names.join(', ')}))`);
     }
   }
+  // repeatable too: ?tag=wife&tag=kids matches games carrying at least one of them
+  const tagVals = [].concat(query.tag || []).filter(Boolean);
+  if (tagVals.length) {
+    const names = tagVals.map((v, i) => { params['tag' + i] = v; return '@tag' + i; });
+    where.push(`EXISTS (SELECT 1 FROM game_tags gt JOIN tags t ON t.id = gt.tag_id
+      WHERE gt.game_id = g.id AND t.name IN (${names.join(', ')}))`);
+  }
   if (query.releasedIn) {
     where.push(`EXISTS (SELECT 1 FROM json_each(g.released_in) WHERE json_each.value = @releasedIn)`);
     params.releasedIn = query.releasedIn;
@@ -98,7 +105,10 @@ const GAME_COLS = `g.id, g.slug, s.source_url AS url, g.title, g.alt_names, g.ye
   (SELECT json_group_array(json_object(
      'source', gs.source, 'url', gs.source_url, 'availability', gs.availability,
      'hasDownload', gs.download_url IS NOT NULL))
-   FROM game_sources gs WHERE gs.game_id = g.id) AS sources`;
+   FROM game_sources gs WHERE gs.game_id = g.id) AS sources,
+  (SELECT json_group_array(name) FROM (
+     SELECT t.name FROM game_tags gt JOIN tags t ON t.id = gt.tag_id
+     WHERE gt.game_id = g.id ORDER BY t.name COLLATE NOCASE)) AS tags`;
 
 // user_data plus the (currently single) source row for each game
 const FROM_GAMES = `FROM games g
@@ -524,6 +534,43 @@ app.post('/api/shortlist/reorder', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- tags ----------
+
+const normalizeTag = (raw) => String(raw ?? '').trim().replace(/\s+/g, ' ').slice(0, 40);
+
+// tags.name is COLLATE NOCASE, so "Kids" reuses an existing "kids"
+function getOrCreateTag(name) {
+  const hit = db.prepare('SELECT id FROM tags WHERE name = ?').get(name);
+  return hit ? hit.id : db.prepare('INSERT INTO tags (name) VALUES (?)').run(name).lastInsertRowid;
+}
+
+app.post('/api/games/:id/tags', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'bad id' });
+  const id = +req.params.id;
+  if (!db.prepare('SELECT 1 FROM games WHERE id = ?').get(id)) return res.status(404).json({ error: 'not found' });
+  const name = normalizeTag(req.body && req.body.name);
+  if (!name) return res.status(400).json({ error: 'tag name required' });
+  db.prepare('INSERT OR IGNORE INTO game_tags (game_id, tag_id) VALUES (?, ?)').run(id, getOrCreateTag(name));
+  const row = db.prepare(`SELECT ${GAME_COLS} ${FROM_GAMES} WHERE g.id = ?`).get(id);
+  res.json(attachInstall(row));
+});
+
+app.delete('/api/games/:id/tags', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'bad id' });
+  const id = +req.params.id;
+  const name = normalizeTag(req.body && req.body.name);
+  const tag = db.prepare('SELECT id FROM tags WHERE name = ?').get(name);
+  if (tag) {
+    db.prepare('DELETE FROM game_tags WHERE game_id = ? AND tag_id = ?').run(id, tag.id);
+    // drop the tag itself once no game carries it, so the filter list stays clean
+    db.prepare('DELETE FROM tags WHERE id = ? AND NOT EXISTS (SELECT 1 FROM game_tags WHERE tag_id = ?)')
+      .run(tag.id, tag.id);
+  }
+  const row = db.prepare(`SELECT ${GAME_COLS} ${FROM_GAMES} WHERE g.id = ?`).get(id);
+  if (!row) return res.status(404).json({ error: 'not found' });
+  res.json(attachInstall(row));
+});
+
 // ---------- user data export / import ----------
 
 app.get('/api/export', (req, res) => {
@@ -533,9 +580,21 @@ app.get('/api/export', (req, res) => {
     WHERE u.rating IS NOT NULL OR (u.notes IS NOT NULL AND u.notes != '')
        OR coalesce(u.status, 'none') != 'none' OR u.shortlisted = 1 OR u.run_exe IS NOT NULL
   `).all();
+  // tags live in game_tags, not user_data — merge them in, adding rows for tag-only games
+  const bySlug = new Map(rows.map((r) => [r.slug, r]));
+  const tagRows = db.prepare(`
+    SELECT g.slug, t.name FROM game_tags gt
+    JOIN tags t ON t.id = gt.tag_id JOIN games g ON g.id = gt.game_id
+    ORDER BY t.name COLLATE NOCASE
+  `).all();
+  for (const { slug, name } of tagRows) {
+    let r = bySlug.get(slug);
+    if (!r) { r = { slug }; bySlug.set(slug, r); rows.push(r); }
+    (r.tags = r.tags || []).push(name);
+  }
   res.setHeader('Content-Disposition',
     `attachment; filename="dosvault-export-${new Date().toISOString().slice(0, 10)}.json"`);
-  res.json({ app: 'dosvault', version: 1, exported_at: new Date().toISOString(), games: rows });
+  res.json({ app: 'dosvault', version: 2, exported_at: new Date().toISOString(), games: rows });
 });
 
 app.post('/api/import', (req, res) => {
@@ -549,12 +608,21 @@ app.post('/api/import', (req, res) => {
       rating = @rating, notes = @notes, status = @status, shortlisted = @shortlisted,
       shortlist_order = @shortlist_order, run_exe = @run_exe, updated_at = datetime('now')
   `);
+  const delTags = db.prepare('DELETE FROM game_tags WHERE game_id = ?');
+  const linkTag = db.prepare('INSERT OR IGNORE INTO game_tags (game_id, tag_id) VALUES (?, ?)');
   let imported = 0;
   let missing = 0;
   db.transaction(() => {
     for (const it of list) {
       const g = it && typeof it.slug === 'string' ? bySlug.get(it.slug) : null;
       if (!g) { missing++; continue; }
+      if (Array.isArray(it.tags)) {
+        delTags.run(g.id);
+        for (const raw of it.tags) {
+          const name = normalizeTag(raw);
+          if (name) linkTag.run(g.id, getOrCreateTag(name));
+        }
+      }
       up.run({
         game_id: g.id,
         rating: it.rating != null ? Math.min(5, Math.max(1, +it.rating || 1)) : null,
@@ -566,6 +634,7 @@ app.post('/api/import', (req, res) => {
       });
       imported++;
     }
+    db.exec('DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM game_tags)');
   })();
   res.json({ imported, missing });
 });
@@ -664,8 +733,8 @@ app.post('/api/import-db', express.raw({ type: () => true, limit: '1gb' }), (req
     try {
       const cols = (schema, t) => db.prepare(`SELECT name FROM ${schema}.pragma_table_info(?)`).all(t).map((r) => r.name);
       db.transaction(() => {
-        for (const t of ['user_data', 'scrape_state', 'game_sources', 'match_review', 'games']) db.exec(`DELETE FROM ${t}`);
-        for (const t of ['games', 'user_data', 'scrape_state', 'game_sources', 'match_review']) {
+        for (const t of ['game_tags', 'tags', 'user_data', 'scrape_state', 'game_sources', 'match_review', 'games']) db.exec(`DELETE FROM ${t}`);
+        for (const t of ['games', 'tags', 'game_tags', 'user_data', 'scrape_state', 'game_sources', 'match_review']) {
           if (!tables.includes(t)) continue;
           const common = cols('main', t).filter((c) => cols('imp', t).includes(c)).join(', ');
           db.exec(`INSERT INTO main.${t} (${common}) SELECT ${common} FROM imp.${t}`);
@@ -695,9 +764,13 @@ app.get('/api/facets', (req, res) => {
     (SELECT count(*) FROM games WHERE detail_scraped = 1) scraped`).get();
   const sources = db.prepare(`
     SELECT source AS v, count(*) AS c FROM game_sources GROUP BY source ORDER BY source`).all();
+  const tags = db.prepare(`
+    SELECT t.name AS v, count(gt.game_id) AS c FROM tags t
+    LEFT JOIN game_tags gt ON gt.tag_id = t.id
+    GROUP BY t.id ORDER BY t.name COLLATE NOCASE`).all();
   res.json({
     genres: facet('genres'), themes: facet('themes'), perspectives: facet('perspectives'),
-    releasedIn: facet('released_in'), sources, years, progress,
+    releasedIn: facet('released_in'), sources, tags, years, progress,
   });
 });
 
