@@ -2,8 +2,8 @@
 
 A local, searchable catalogue of DOS games drawn from multiple abandonware
 sites (myabandonware.com, the Internet Archive, dosgamesarchive.com), with a
-personal shortlist, 1-5 star ratings, play-status tracking, per-game notes,
-and one-click install & run in DOSBox.
+personal shortlist, tags, 1-5 star ratings, play-status tracking, per-game
+notes, and one-click install & run in DOSBox.
 
 No build step: Node + Express + SQLite (better-sqlite3) on the server, vanilla
 JS in the browser.
@@ -72,10 +72,21 @@ thumbnails on both sides and undo on every action:
 ## Features
 
 - Full-text search (title, alt names, description) with prefix matching.
-- Filters: genre, theme, perspective (all multi-select), released-in country,
-  source, year range (plus era
-  quick-chips), min community rating, min vote count, my status, rated-by-me,
-  has-notes, installed.
+- Filters: genre, theme, perspective, my tags (all multi-select), released-in
+  country, source, year range (plus era quick-chips), min community rating,
+  min vote count, my status, rated-by-me, has-notes, installed. The sidebar
+  groups them into collapsible sections that remember their state and show a
+  count of active filters when closed.
+- Filter options narrow to the current results as you select, so a dead-end
+  combination is visible before you pick it. Each list ignores its own
+  selection while narrowing, so you can still add a second genre after
+  choosing one. On by default, toggleable in settings.
+- Saved filters: store the current filter selection under a name and re-apply
+  it from a dropdown later. Kept in the database, so every browser in the
+  house sees the same list.
+- Tags: label games for whoever they suit ("wife", "kids", anything) from the
+  game view. Typing offers existing tags to click; new names are created on
+  the spot. A tag filter appears in the sidebar once at least one tag exists.
 - Sort by title, year, community rating, vote count, or my rating.
 - Game detail view with metadata, description, and a link to the game page.
 - Install button: downloads the best DOS release from the site (highest version,
@@ -206,13 +217,15 @@ npm run sync:myabandonware
 Everything lives in `data/app.db` (SQLite, WAL mode):
 
 - `games`: the scraped catalogue. Re-scraping refreshes it.
-- `user_data`: your ratings, notes, status, shortlist, install locations.
-  A separate table, so re-scraping never touches it.
+- `user_data`, `tags`/`game_tags`, `filter_presets`: your ratings, notes,
+  status, shortlist, install locations, tags, and saved filters. Separate
+  tables, so re-scraping never touches them.
 
 Settings (⚙) offers two levels of backup:
 
-- **Export / Import**: a portable JSON of just your personal data (matched by
-  game slug on import, so it survives a database rebuild on any machine).
+- **Export / Import**: a portable JSON of just your personal data, tags and
+  saved filters included (matched by game slug on import, so it survives a
+  database rebuild on any machine).
 - **Export DB / Import DB**: the entire SQLite database (catalogue + personal
   data), handy for moving to another machine without re-scraping. Importing
   replaces everything. Thumbnails are not included; run `node thumbs.js` to
