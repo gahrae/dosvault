@@ -343,6 +343,10 @@ async function openGame(id) {
   currentGame = await res.json();
   renderModal();
   $('#gameModal').showModal();
+  // the modal's scroll container is reused across games — don't inherit the
+  // previous game's scroll position (must happen after showModal: while the
+  // dialog is closed the container has no layout and the reset wouldn't stick)
+  $('#modalContent').scrollTop = 0;
   mountToasts();
 }
 
