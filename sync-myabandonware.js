@@ -139,8 +139,12 @@ function parseGamePage(html) {
     else if (label === 'dosbox support') out.dosbox = td.text().trim().replace(/\s+/g, ' ') || null;
   });
 
+  // drop the site's "Read Full Description" expander link, which .text() would inline
   const desc = $('.gameDescription');
-  out.description = desc.length ? desc.text().trim() : null;
+  desc.find('a, button, [class*="toggle"]').filter((_, e) => /read full description/i.test($(e).text())).remove();
+  out.description = desc.length
+    ? desc.text().trim().replace(/^Read Full Description\s*/i, '') || null
+    : null;
 
   // community rating from JSON-LD VideoGame block
   $('script[type="application/ld+json"]').each((_, s) => {
