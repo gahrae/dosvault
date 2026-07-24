@@ -241,6 +241,27 @@ function toast(msg, { ms = 5000, type = '' } = {}) {
 
 const FILTER_IDS = ['fGenre', 'fTheme', 'fPerspective', 'fTag', 'fReleasedIn', 'fSource', 'fYearMin', 'fYearMax', 'fMinRating', 'fMinVotes', 'fStatus', 'fSort'];
 
+// ---------- collapsible filter groups ----------
+// open/closed is remembered per group (the html's open attributes are the
+// defaults until the user toggles); a [n] badge on the header counts the
+// active filters inside, so collapsed groups can't hide an applied filter
+document.querySelectorAll('details.fgroup').forEach((d) => {
+  const stored = localStorage.getItem('fgroup:' + d.dataset.key);
+  if (stored !== null) d.open = stored === '1';
+  d.addEventListener('toggle', () => localStorage.setItem('fgroup:' + d.dataset.key, d.open ? '1' : '0'));
+});
+
+function updateFilterBadges() {
+  document.querySelectorAll('details.fgroup').forEach((d) => {
+    let n = 0;
+    d.querySelectorAll('select[multiple]').forEach((s) => { n += s.selectedOptions.length; });
+    d.querySelectorAll('select:not([multiple])').forEach((s) => { if (s.value) n++; });
+    d.querySelectorAll('input[type="number"]').forEach((i) => { if (i.value) n++; });
+    d.querySelectorAll('input[type="checkbox"]').forEach((c) => { if (c.checked) n++; });
+    d.querySelector('.fcount').textContent = n ? `[${n}]` : '';
+  });
+}
+
 const MULTI_FILTERS = { fGenre: 'genre', fTheme: 'theme', fPerspective: 'perspective', fTag: 'tag' };
 
 function filterParams() {
@@ -357,6 +378,7 @@ async function loadGames() {
   const res = await fetch('/api/games?' + p);
   const data = await res.json();
   renderResults(data);
+  updateFilterBadges();
   if (narrowFacets()) loadFacets(); // keep the option lists in step with the results
 }
 

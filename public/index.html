@@ -28,51 +28,71 @@
       <button id="delPreset" title="Delete the selected saved filter">🗑</button>
     </div>
     <input type="search" id="search" placeholder="Search title / description...">
-    <label title="Ctrl-click to select several; empty selection means all">Genre
-      <select id="fGenre" multiple size="4"></select></label>
-    <label title="Ctrl-click to select several; empty selection means all">Theme
-      <select id="fTheme" multiple size="4"></select></label>
-    <label title="Ctrl-click to select several; empty selection means all">Perspective
-      <select id="fPerspective" multiple size="4"></select></label>
-    <label id="fTagWrap" title="Ctrl-click to select several; empty selection means all" hidden>My tags
-      <select id="fTag" multiple size="4"></select></label>
-    <label>Released in <select id="fReleasedIn"><option value="">All</option></select></label>
-    <label>Source <select id="fSource"><option value="">All</option></select></label>
-    <div class="row">
-      <label>Year from <input type="number" id="fYearMin" min="1970" max="2010" placeholder="1980"></label>
-      <label>to <input type="number" id="fYearMax" min="1970" max="2010" placeholder="1999"></label>
-    </div>
-    <div class="era-chips">
-      <button data-era="1980,1984">Early 80s</button>
-      <button data-era="1985,1989">Late 80s</button>
-      <button data-era="1990,1994">Early 90s</button>
-      <button data-era="1995,2005">Mid 90s+</button>
-    </div>
-    <label>Min community rating
-      <select id="fMinRating">
-        <option value="">Any</option><option value="3">3+</option>
-        <option value="3.5">3.5+</option><option value="4">4+</option><option value="4.5">4.5+</option>
-      </select>
-    </label>
-    <label>Min votes
-      <select id="fMinVotes">
-        <option value="">Any</option><option value="5">5+</option>
-        <option value="20">20+</option><option value="50">50+</option>
-      </select>
-    </label>
-    <label>My status
-      <select id="fStatus">
-        <option value="">Any (hides Not interested)</option>
-        <option value="none">Untriaged</option>
-        <option value="played">Played</option>
-        <option value="finished">Finished</option>
-        <option value="abandoned">Abandoned</option>
-        <option value="not_interested">Not interested</option>
-      </select>
-    </label>
-    <label class="check"><input type="checkbox" id="fRated"> Rated by me</label>
-    <label class="check"><input type="checkbox" id="fHasNotes"> Has my notes</label>
-    <label class="check"><input type="checkbox" id="fInstalled"> Installed</label>
+    <details class="fgroup" data-key="genre" open>
+      <summary title="Ctrl-click to select several; empty selection means all">Genre <span class="fcount"></span></summary>
+      <select id="fGenre" multiple size="6"></select>
+    </details>
+    <details class="fgroup" data-key="theme" open>
+      <summary title="Ctrl-click to select several; empty selection means all">Theme <span class="fcount"></span></summary>
+      <select id="fTheme" multiple size="6"></select>
+    </details>
+    <details class="fgroup" data-key="perspective" open>
+      <summary title="Ctrl-click to select several; empty selection means all">Perspective <span class="fcount"></span></summary>
+      <select id="fPerspective" multiple size="6"></select>
+    </details>
+    <details class="fgroup" data-key="tag" id="fTagWrap" hidden>
+      <summary title="Ctrl-click to select several; empty selection means all">My tags <span class="fcount"></span></summary>
+      <select id="fTag" multiple size="6"></select>
+    </details>
+    <details class="fgroup" data-key="year" open>
+      <summary>Year <span class="fcount"></span></summary>
+      <div class="row">
+        <label>from <input type="number" id="fYearMin" min="1970" max="2010" placeholder="1980"></label>
+        <label>to <input type="number" id="fYearMax" min="1970" max="2010" placeholder="1999"></label>
+      </div>
+      <div class="era-chips">
+        <button data-era="1980,1984">Early 80s</button>
+        <button data-era="1985,1989">Late 80s</button>
+        <button data-era="1990,1994">Early 90s</button>
+        <button data-era="1995,2005">Mid 90s+</button>
+      </div>
+    </details>
+    <details class="fgroup" data-key="community">
+      <summary>Community rating <span class="fcount"></span></summary>
+      <label>Min rating
+        <select id="fMinRating">
+          <option value="">Any</option><option value="3">3+</option>
+          <option value="3.5">3.5+</option><option value="4">4+</option><option value="4.5">4.5+</option>
+        </select>
+      </label>
+      <label>Min votes
+        <select id="fMinVotes">
+          <option value="">Any</option><option value="5">5+</option>
+          <option value="20">20+</option><option value="50">50+</option>
+        </select>
+      </label>
+    </details>
+    <details class="fgroup" data-key="origin">
+      <summary>Origin <span class="fcount"></span></summary>
+      <label>Released in <select id="fReleasedIn"><option value="">All</option></select></label>
+      <label>Source <select id="fSource"><option value="">All</option></select></label>
+    </details>
+    <details class="fgroup" data-key="mine">
+      <summary>My activity <span class="fcount"></span></summary>
+      <label>My status
+        <select id="fStatus">
+          <option value="">Any (hides Not interested)</option>
+          <option value="none">Untriaged</option>
+          <option value="played">Played</option>
+          <option value="finished">Finished</option>
+          <option value="abandoned">Abandoned</option>
+          <option value="not_interested">Not interested</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="fRated"> Rated by me</label>
+      <label class="check"><input type="checkbox" id="fHasNotes"> Has my notes</label>
+      <label class="check"><input type="checkbox" id="fInstalled"> Installed</label>
+    </details>
     <label>Sort by
       <select id="fSort">
         <option value="title">Title</option>
