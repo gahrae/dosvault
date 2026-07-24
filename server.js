@@ -207,16 +207,17 @@ function listExecutables(dir) {
 }
 
 // CD images in the install folder, for DOSBox IMGMOUNT. A .cue mounts its own
-// data file, so same-stem .bin/.iso siblings are dropped in its favour;
-// .iso/.bin without a cue must carry the ISO9660 magic (many games ship
-// plain data files named *.bin).
+// data file, so same-stem .bin/.iso/.img siblings are dropped in its favour;
+// .iso/.bin/.img without a cue must carry the ISO9660 magic (many games ship
+// plain data files named *.bin). .img covers CloneCD rips (.ccd/.img/.sub) —
+// the .img is raw 2352-byte sectors, which DOSBox mounts directly as iso.
 function findCdImages(dir) {
   const out = [];
   const walk = (d, rel) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const r = rel ? path.join(rel, e.name) : e.name;
       if (e.isDirectory()) walk(path.join(d, e.name), r);
-      else if (/\.(iso|cue|bin)$/i.test(e.name)) out.push(r);
+      else if (/\.(iso|cue|bin|img)$/i.test(e.name)) out.push(r);
     }
   };
   walk(dir, '');
@@ -253,7 +254,7 @@ function listIsoFiles(isoAbs) {
 function listAllExecutables(dir) {
   const cd = new Set();
   for (const img of findCdImages(dir)) {
-    if (!/\.iso$/i.test(img)) continue; // cue/bin sectors aren't listable, still mountable
+    if (!/\.iso$/i.test(img)) continue; // cue/bin/img sectors aren't listable, still mountable
     for (const f of listIsoFiles(path.join(dir, img))) {
       if (/\.(bat|exe|com)$/i.test(f)) cd.add('cd:' + f);
     }
@@ -292,8 +293,8 @@ function isZip(file) {
 }
 
 // ISO9660: "CD001" in the primary volume descriptor at sector 16 — checked at
-// both the 2048-byte (.iso) and raw 2352-byte (.bin, 16-byte sector header)
-// sector offsets. Guards against e.g. game data files that happen to be *.bin.
+// both the 2048-byte (.iso) and raw 2352-byte (.bin/.img, 16-byte sector
+// header) sector offsets. Guards against e.g. game data files named *.bin.
 function isCdImage(file) {
   const fd = fs.openSync(file, 'r');
   try {
