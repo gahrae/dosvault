@@ -83,6 +83,11 @@ thumbnails on both sides and undo on every action:
   (PDF/text) into the game's folder, with a live retro console showing progress.
 - Run button: launches the game in DOSBox, remembering which executable you
   picked per game. A link opens the install folder in your file manager.
+- CD-ROM games: installs containing a disc image (.iso, .cue/.bin) get it
+  mounted automatically (`IMGMOUNT E:` with the game folder on D:), and
+  executables found inside the ISO show in the run picker marked 💿 — run the
+  CD's installer once, then the installed copy on D: appears in the picker.
+  Multi-disc games mount all images (swap discs with Ctrl+F4 in DOSBox).
 - Shortlist with drag-to-reorder priority.
 - 1-5 star personal ratings and notes (auto-saved).
 - Play status: played / finished / abandoned / not interested ("not interested"
@@ -134,6 +139,10 @@ Notes per platform:
   and `explorer`, so only the DOSBox path usually needs setting.
 - **DOSBox Staging / DOSBox-X** users on any platform: set `"dosbox"` to
   `["dosbox-staging"]` / `["dosbox-x"]` (or the full path).
+- **Linux:** listing executables inside CD images uses `isoinfo` (package
+  `genisoimage` or `cdrtools`); `["bsdtar", "-tf", "{archive}"]` works as an
+  `isoList` alternative. Without a working `isoList`, ISO games still mount
+  and run — the picker just can't show the CD's contents.
 
 All available keys, with their defaults:
 
@@ -144,6 +153,7 @@ All available keys, with their defaults:
 | `dosbox`     | `["dosbox"]`                                | Base command to launch DOSBox; mount/exe args are appended |
 | `unzip`      | `unzip -o {archive} -d {dest}` (`tar -xf {archive} -C {dest}` on Windows) | Archive extraction command |
 | `unzipList`  | `unzip -Z1 {archive}` (`tar -tf {archive}` on Windows) | Lists archive entry paths, one per line |
+| `isoList`    | `isoinfo -f -i {archive}` (`tar -tf {archive}` on Windows/macOS) | Lists file paths inside a CD image, one per line |
 | `openFolder` | `xdg-open {dir}` / `open {dir}` (macOS) / `explorer {dir}` (Windows) | Opens a folder in the file manager |
 
 Commands are given as argv arrays; `{archive}`, `{dest}`, and `{dir}` are

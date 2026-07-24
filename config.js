@@ -19,6 +19,9 @@ const DEFAULTS = {
   unzip: isWin ? ['tar', '-xf', '{archive}', '-C', '{dest}'] : ['unzip', '-o', '{archive}', '-d', '{dest}'],
   // list entry paths inside {archive}, one per line
   unzipList: isWin ? ['tar', '-tf', '{archive}'] : ['unzip', '-Z1', '{archive}'],
+  // list file paths inside a CD image {archive}, one per line
+  // (Windows/macOS tar is bsdtar, which reads ISO9660; isoinfo is from cdrtools/genisoimage)
+  isoList: isWin || isMac ? ['tar', '-tf', '{archive}'] : ['isoinfo', '-f', '-i', '{archive}'],
   // open {dir} in the system file manager
   openFolder: isWin ? ['explorer', '{dir}'] : isMac ? ['open', '{dir}'] : ['xdg-open', '{dir}'],
 };

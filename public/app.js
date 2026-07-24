@@ -380,9 +380,9 @@ function renderModal() {
           ${canInstall(g) && !g.installed && dlSources(g).length > 1 ? `<select id="srcSelect" title="Install from">
             <option value="">Auto source</option>${dlSources(g).map((s) =>
               `<option value="${esc(s.source)}">${esc(SOURCE_NAMES[s.source] || s.source)}</option>`).join('')}</select>` : ''}
-          ${g.installed && g.executables.length ? '<button id="runBtn">▶ Run</button>' : ''}
-          ${g.installed && g.executables.length > 1 ? `<select id="exeSelect" title="Executable to run">${g.executables.map((e) =>
-            `<option value="${esc(e)}"${e === g.run_exe ? ' selected' : ''}>${esc(e)}</option>`).join('')}</select>` : ''}
+          ${g.installed && (g.executables.length || g.cd_images?.length) ? '<button id="runBtn">▶ Run</button>' : ''}
+          ${g.installed && g.executables.length > 1 ? `<select id="exeSelect" title="Executable to run (💿 = on the CD image)">${g.executables.map((e) =>
+            `<option value="${esc(e)}"${e === g.run_exe ? ' selected' : ''}>${e.startsWith('cd:') ? '💿 ' + esc(e.slice(3)) : esc(e)}</option>`).join('')}</select>` : ''}
           ${g.installed && g.manual ? `<a href="/api/games/${g.id}/manual" target="_blank" rel="noopener" title="${esc(g.manual)}">📖 Manual</a>` : ''}
           ${g.installed ? '<button id="uninstallBtn" title="Delete the game folder">🗑 Uninstall</button>' : ''}
         </div>

@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
-const { execFile, spawn } = require('child_process');
+const { execFile, execFileSync, spawn } = require('child_process');
 const { promisify } = require('util');
 const execFileP = promisify(execFile);
 const Database = require('better-sqlite3');
@@ -150,7 +150,8 @@ function attachInstall(row) {
     row.install_path = null;
     row.run_exe = null;
   }
-  row.executables = row.installed ? listExecutables(row.install_path) : [];
+  row.executables = row.installed ? listAllExecutables(row.install_path) : [];
+  row.cd_images = row.installed ? findCdImages(row.install_path) : [];
   row.manual = row.installed ? findManual(row.install_path) : null;
   return row;
 }
@@ -171,6 +172,17 @@ function findManual(dir) {
   return out.sort((a, b) => score(a) - score(b))[0];
 }
 
+// best launch candidate first: go/start/run/play scripts, then exe > bat > com,
+// with install/setup/config helpers last
+const scoreExe = (p) => {
+  const base = path.basename(p).replace(/\.[^.]+$/, '').toLowerCase();
+  if (/^(install|setup|config|setsound|sound|readme)/.test(base)) return 90;
+  if (/^(go|start|run|play|fun)$/.test(base)) return 0;
+  return { '.exe': 10, '.bat': 20, '.com': 30 }[path.extname(p).toLowerCase()] ?? 50;
+};
+const sortExes = (arr) => arr.sort((a, b) => scoreExe(a) - scoreExe(b)
+  || a.split(/[\\/]/).length - b.split(/[\\/]/).length || a.localeCompare(b));
+
 function listExecutables(dir) {
   const out = [];
   const walk = (d, rel) => {
@@ -181,15 +193,62 @@ function listExecutables(dir) {
     }
   };
   walk(dir, '');
-  // best launch candidate first: go/start/run/play scripts, then exe > bat > com,
-  // with install/setup/config helpers last
-  const score = (p) => {
-    const base = path.basename(p).replace(/\.[^.]+$/, '').toLowerCase();
-    if (/^(install|setup|config|setsound|sound|readme)/.test(base)) return 90;
-    if (/^(go|start|run|play)$/.test(base)) return 0;
-    return { '.exe': 10, '.bat': 20, '.com': 30 }[path.extname(p).toLowerCase()] ?? 50;
+  return sortExes(out);
+}
+
+// CD images in the install folder, for DOSBox IMGMOUNT. A .cue mounts its own
+// data file, so same-stem .bin/.iso siblings are dropped in its favour;
+// .iso/.bin without a cue must carry the ISO9660 magic (many games ship
+// plain data files named *.bin).
+function findCdImages(dir) {
+  const out = [];
+  const walk = (d, rel) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const r = rel ? path.join(rel, e.name) : e.name;
+      if (e.isDirectory()) walk(path.join(d, e.name), r);
+      else if (/\.(iso|cue|bin)$/i.test(e.name)) out.push(r);
+    }
   };
-  return out.sort((a, b) => score(a) - score(b) || a.split(path.sep).length - b.split(path.sep).length || a.localeCompare(b));
+  walk(dir, '');
+  const stem = (p) => p.replace(/\.[^.]+$/, '').toLowerCase();
+  const cueStems = new Set(out.filter((p) => /\.cue$/i.test(p)).map(stem));
+  return out
+    .filter((p) => /\.cue$/i.test(p)
+      || (!cueStems.has(stem(p)) && isCdImage(path.join(dir, p))))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+// file paths inside an ISO, via config.isoList (cached — attachInstall runs on every fetch)
+const isoListCache = new Map();
+function listIsoFiles(isoAbs) {
+  const st = fs.statSync(isoAbs);
+  const hit = isoListCache.get(isoAbs);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.entries;
+  let entries = [];
+  try {
+    const [cmd, ...args] = fill(config.isoList, { archive: isoAbs });
+    const stdout = execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+    entries = [...new Set(stdout.split('\n')
+      .map((l) => l.trim().replace(/;1$/, '').replace(/\\/g, '/').replace(/^\.?\//, ''))
+      .filter(Boolean))];
+  } catch (e) {
+    console.error(`isoList failed for ${isoAbs}: ${e.message}`);
+  }
+  isoListCache.set(isoAbs, { mtimeMs: st.mtimeMs, size: st.size, entries });
+  return entries;
+}
+
+// disk executables first (a game installed from CD to D: should outrank the CD
+// copy), then "cd:"-prefixed ones found inside plain ISO images
+function listAllExecutables(dir) {
+  const cd = new Set();
+  for (const img of findCdImages(dir)) {
+    if (!/\.iso$/i.test(img)) continue; // cue/bin sectors aren't listable, still mountable
+    for (const f of listIsoFiles(path.join(dir, img))) {
+      if (/\.(bat|exe|com)$/i.test(f)) cd.add('cd:' + f);
+    }
+  }
+  return [...listExecutables(dir), ...sortExes([...cd].map((e) => e.slice(3))).map((e) => 'cd:' + e)];
 }
 
 const setInstallPath = db.prepare(`
@@ -217,6 +276,22 @@ function isZip(file) {
     const b = Buffer.alloc(4);
     fs.readSync(fd, b, 0, 4, 0);
     return b.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// ISO9660: "CD001" in the primary volume descriptor at sector 16 — checked at
+// both the 2048-byte (.iso) and raw 2352-byte (.bin, 16-byte sector header)
+// sector offsets. Guards against e.g. game data files that happen to be *.bin.
+function isCdImage(file) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const b = Buffer.alloc(5);
+    for (const off of [16 * 2048 + 1, 16 * 2352 + 16 + 1]) {
+      if (fs.readSync(fd, b, 0, 5, off) === 5 && b.toString('latin1') === 'CD001') return true;
+    }
+    return false;
   } finally {
     fs.closeSync(fd);
   }
@@ -291,6 +366,8 @@ app.post('/api/games/:id/install', async (req, res) => {
       if (isZip(archivePath)) {
         log(`UNZIP ${fname}`);
         gameRoot = await unzipTopDir(archivePath, destDir);
+      } else if (isCdImage(archivePath)) {
+        log(`ISO ${fname} is a CD image — DOSBox will mount it at run time`);
       } else {
         warnings.push(`Downloaded ${path.basename(archivePath)} — not a zip, extract it manually`);
       }
@@ -314,6 +391,7 @@ app.post('/api/games/:id/install', async (req, res) => {
     setInstallPath.run(game.id, destDir);
     const row = db.prepare(`SELECT ${GAME_COLS} ${FROM_GAMES} WHERE g.id = ?`).get(game.id);
     const full = attachInstall(row);
+    if (full.cd_images.length) log(`CD ${full.cd_images.length} disc image(s) detected: ${full.cd_images.join(', ')}`);
     log(`SCAN ${full.executables.length} executable(s) found`);
     log(`OK installed to ${destDir}`);
     send({ type: 'done', game: { ...full, warning: warnings.join(' | ') || null } });
@@ -368,22 +446,37 @@ app.post('/api/games/:id/run', (req, res) => {
   if (!u || !u.install_path || !fs.existsSync(u.install_path)) {
     return res.status(400).json({ error: 'not installed' });
   }
-  const saved = u.run_exe && fs.existsSync(path.resolve(u.install_path, u.run_exe)) ? u.run_exe : null;
-  const exe = req.body.exe || saved || listExecutables(u.install_path)[0];
-  if (!exe) return res.status(400).json({ error: `no .bat/.exe/.com found in ${u.install_path}` });
-  const full = path.resolve(u.install_path, exe);
-  if (!full.startsWith(path.resolve(u.install_path) + path.sep) || !fs.existsSync(full)) {
-    return res.status(400).json({ error: 'bad exe path' });
+  const images = findCdImages(u.install_path);
+  const exes = listAllExecutables(u.install_path);
+  // only exes we enumerated ourselves may run — this also blocks path traversal
+  const saved = exes.includes(u.run_exe) ? u.run_exe : null;
+  const exe = req.body.exe || saved || exes[0] || null;
+  if (exe && !exes.includes(exe)) return res.status(400).json({ error: 'bad exe path' });
+  if (!exe && !images.length) {
+    return res.status(400).json({ error: `no .bat/.exe/.com found in ${u.install_path}` });
   }
-  // mount the game's own directory as D: so any autoexec C: mount is left alone
-  const [cmd, ...args] = [
-    ...config.dosbox,
-    '-c', `mount d "${path.dirname(full)}"`,
-    '-c', 'd:',
-    '-c', path.basename(full),
-  ];
+  // D: = game dir (any autoexec C: mount is left alone), E: = CD images if present
+  const cmds = [];
+  if (images.length) {
+    cmds.push(`mount d "${path.resolve(u.install_path)}"`);
+    cmds.push(`imgmount e ${images.map((i) => `"${path.resolve(u.install_path, i)}"`).join(' ')} -t iso`);
+    if (exe) {
+      const onCd = exe.startsWith('cd:');
+      const rel = onCd ? exe.slice(3) : exe;
+      cmds.push(onCd ? 'e:' : 'd:');
+      const dir = path.dirname(rel);
+      if (dir !== '.') cmds.push(`cd ${dir.split(/[\\/]/).join('\\')}`);
+      cmds.push(path.basename(rel));
+    } else {
+      cmds.push('e:'); // nothing runnable found — drop the user at the CD prompt
+    }
+  } else {
+    const full = path.resolve(u.install_path, exe);
+    cmds.push(`mount d "${path.dirname(full)}"`, 'd:', path.basename(full));
+  }
+  const [cmd, ...args] = [...config.dosbox, ...cmds.flatMap((c) => ['-c', c])];
   spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
-  db.prepare('UPDATE user_data SET run_exe = ? WHERE game_id = ?').run(exe, id);
+  if (exe) db.prepare('UPDATE user_data SET run_exe = ? WHERE game_id = ?').run(exe, id);
   res.json({ ok: true, exe });
 });
 
