@@ -35,8 +35,9 @@ $('#themeSelect').innerHTML = THEMES.map((t) => `<option value="${t.id}">${esc(t
 $('#themeSelect').value = localStorage.getItem('theme') || 'midnight';
 applyTheme($('#themeSelect').value);
 $('#themeSelect').addEventListener('change', () => applyTheme($('#themeSelect').value));
-// narrow-filters setting: facet lists only show options matching the current results
-const narrowFacets = () => localStorage.getItem('narrowFacets') === '1';
+// narrow-filters setting: facet lists only show options matching the current results.
+// On by default; only an explicit opt-out sticks
+const narrowFacets = () => localStorage.getItem('narrowFacets') !== '0';
 $('#narrowFacetsChk').checked = narrowFacets();
 $('#narrowFacetsChk').addEventListener('change', () => {
   localStorage.setItem('narrowFacets', $('#narrowFacetsChk').checked ? '1' : '0');
