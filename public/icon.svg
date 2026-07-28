@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect width="128" height="128" rx="18" fill="#0b0b0b"/>
+  <rect x="5" y="5" width="118" height="118" rx="14" fill="none" stroke="#33ff33" stroke-width="4"/>
+  <text x="64" y="84" text-anchor="middle" font-family="'DejaVu Sans Mono',monospace" font-size="52" font-weight="bold" fill="#33ff33">C:\</text>
+</svg>
